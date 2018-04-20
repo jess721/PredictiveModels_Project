@@ -1,0 +1,75 @@
+---
+title: "Predictive Models Project"
+author: "Jessica H."
+date: "4/15/2018"
+output: html_document
+---
+
+##Synopsis
+Data was collected on 6 participants completing dumbell lifts correctly and incorrectly in 5 different ways. The participants wore activity tracking devices while completing the lifts, that tracked several different variables. The sample data was divided in training and testing sets. Two models were fit to the training data, a tree fit and a random forest, both using 10 iterations of repeated cross validation. The random forest performed much better, with a 95% confidence interval between 0.9998-1, and was used for the final model. The data for this study was provided by Groupware@LES here: [Study data](http://groupware.les.inf.puc-rio.br/har)
+
+##Data Prep
+The test and training data is downloaded directly into your working directory from these links:
+ - [Training data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv)
+ - [Testing data](https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv).
+ 
+```{r downloadData, cache=TRUE}
+library(RCurl)
+    download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv",
+                  destfile='training.csv', method='curl')
+    testURL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+    download.file(url="https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv",
+                  destfile='testing.csv', method='curl')
+```
+
+The data is then loaded into data frames for processing.
+```{r loadData, cache=TRUE}
+##assume both NA and null strings ("") are NA values
+testData <- read.csv("testing.csv", na.strings = c("NA",""))
+trainingData <- read.csv("training.csv", na.strings = c("NA",""))
+```
+
+##Data Analysis
+Looking at the first few rows of data, we can see that several columns have no data. Therefore we will massage the data to remove columns not relevant for our models.
+```{r explore}
+set.seed(515)
+
+##remove columns with mostly NAs
+library(dplyr, warn.conflicts = FALSE)
+trainingSub <- trainingData %>% select(which(colMeans(is.na(.)) < 0.5)) 
+
+##create another subset without the user or time info, dropping first 7 cols
+trainingSub2 <- trainingSub[,8:60]
+classeCell <- grep("classe",colnames(trainingSub2))
+```
+
+First, we will try a simple tree model
+```{r treeFit, cache=TRUE}
+library(caret)
+##complete repeated cross validation 10 times
+ctrl <- trainControl(method = "repeatedcv", number = 10)
+
+##remove all columns a majority of NA values.
+fitTree <- train(classe ~  . -X -user_name -raw_timestamp_part_1 -raw_timestamp_part_2 -cvtd_timestamp -new_window -num_window -classe, data = trainingSub, method = "rpart", trControl = ctrl)
+
+##check model on training data
+predictTrainTree <- predict(fitTree, trainingData)
+
+##check accuracy
+confusionMatrix(predictTrainTree, trainingData$classe)
+```
+
+Looking at the confusion matrix, we can see this tree model has  49.56% accuracy with a 95% confidence interval of 48.9-50.3%. We can likely improve on that by using a random forest.
+```{r randomForestFit, cache=TRUE}
+fitRF <- train(classe ~  . -classe, data = trainingSub2, method = "rf", trControl = ctrl)
+
+predictTrainRF <- predict(fitRF, trainingData)
+confusionMatrix(predictTrainRF, trainingData$classe)
+```
+
+The random forest fit is much more accurate than the rpart tree fit. Therefore, the random forest will be used for the final analyis. The random forest fit using random cross validation has an accuracy of 1, with a 95% confidence interval of 0.9998-1.  If the test data is taken from the same population, we expect the random forest model to perform very well.
+
+The test data can be predicted using the predict function with the random forest model:
+```{r predictTest}
+predict(fitRF, testData)
+```
